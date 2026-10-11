@@ -50,7 +50,7 @@ class ApiTests(unittest.TestCase):
             error.exception.close()
 
     def test_assets_and_status(self):
-        for route in ('/', '/styles.css', '/app.js', '/favicon.svg'):
+        for route in ('/', '/styles.css', '/app.js', '/favicon.svg', '/favicon.ico', '/favicon.png'):
             with urlopen(self.base + route) as response:
                 self.assertGreater(len(response.read()), 100)
         with urlopen(self.base + '/api/status') as response:
