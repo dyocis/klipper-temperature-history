@@ -62,6 +62,8 @@ class Store:
             """)
             if 'kind' not in [row[1] for row in db.execute('PRAGMA table_info(events)')]:
                 db.execute("ALTER TABLE events ADD COLUMN kind TEXT NOT NULL DEFAULT 'state'")
+            if 'is_temperature' not in [row[1] for row in db.execute('PRAGMA table_info(sensors)')]:
+                db.execute("ALTER TABLE sensors ADD COLUMN is_temperature INTEGER NOT NULL DEFAULT 1")
 
     @contextmanager
     def connect(self):
@@ -74,7 +76,7 @@ class Store:
 
     def record(self, ts, readings, sensors, event=None):
         with self.connect() as db:
-            db.executemany("INSERT OR REPLACE INTO sensors VALUES(?,?,?)", sensors)
+            db.executemany("INSERT OR REPLACE INTO sensors(name,label,kind,is_temperature) VALUES(?,?,?,1)", sensors)
             db.executemany("INSERT INTO samples VALUES(?,?,?,?)", [(ts, name, value, target) for name, value, target in readings])
             if event:
                 previous = db.execute("SELECT state,filename FROM events ORDER BY ts DESC LIMIT 1").fetchone()
@@ -93,7 +95,12 @@ class Store:
 
     def sensors(self):
         with self.connect() as db:
-            return [dict(zip(("name", "label", "kind"), row)) for row in db.execute("SELECT name,label,kind FROM sensors ORDER BY name")]
+            return [dict(zip(("name", "label", "kind"), row)) for row in db.execute("SELECT name,label,kind FROM sensors WHERE is_temperature=1 ORDER BY name")]
+
+    def exclude(self, names):
+        # Keep existing data for retention/backup, but never offer it as degrees C.
+        with self.connect() as db:
+            db.executemany('UPDATE sensors SET is_temperature=0 WHERE name=?', [(name,) for name in names])
 
     def history(self, start, end, names, buckets=1200):
         # Preserve min/max and null gaps in long-range views rather than losing peaks.
@@ -152,11 +159,13 @@ class Recorder:
             sensor_settings = settings.get(name.lower(), {})
             sensor_type = str(sensor_settings.get("sensor_type", "")).upper()
             # Klipper can expose volts, watts and VOC through temperature interfaces.
-            nonstandard = sensor_type in {"HOT_P", "HOT_V", "HOT_I"} or bool(sensor_settings.get("plot_voc"))
-            if name in self.config["exclude_sensors"] or (nonstandard and name not in self.config["include_nonstandard_sensors"]):
+            gas_reading = sensor_type.startswith('SGP') or bool(sensor_settings.get("plot_voc"))
+            nonstandard = sensor_type in {"HOT_P", "HOT_V", "HOT_I"}
+            if gas_reading or name in self.config["exclude_sensors"] or (nonstandard and name not in self.config["include_nonstandard_sensors"]):
                 excluded.append(name)
             else:
                 selected.append(name)
+        self.store.exclude(excluded)
         status = self.get("/printer/objects/query", {**{name: "" for name in selected}, "print_stats": ""})["status"]
         ts = time.time()
         readings, metadata, current = [], [], {}

@@ -56,6 +56,23 @@ class HistoryTests(unittest.TestCase):
         rows = list(self.store.export(0, 9999999999, ['old']))
         self.assertIsNone(rows[-1][2])
 
+    def test_sgp_history_hidden_but_bme_temperature_retained(self):
+        sgp, bme = 'temperature_sensor SGP_IN', 'temperature_sensor BME_IN'
+        self.store.record(1, [(sgp, 97, None)], [(sgp, 'SGP IN', 'sensor')])
+        config = {**self.config, 'include_nonstandard_sensors': [sgp]}
+        recorder = Recorder(config, self.store)
+        discovery = {'status': {'heaters': {'available_sensors': [sgp, bme]}, 'configfile': {'settings': {
+            sgp.lower(): {'sensor_type': 'SGP40'}, bme.lower(): {'sensor_type': 'BME280'}}}}}
+        telemetry = {'status': {bme: {'temperature': 36.6, 'pressure': 1001, 'humidity': 45}}}
+        with patch.object(recorder, 'get', side_effect=[discovery, telemetry]) as get:
+            recorder.sample()
+        self.assertNotIn(sgp, get.call_args.args[1])
+        self.assertEqual([s['name'] for s in self.store.sensors()], [bme])
+        self.assertEqual(recorder.status['excluded'], [sgp])
+        self.assertEqual(recorder.status['readings'][bme]['value'], 36.6)
+        self.assertNotIn('pressure', recorder.status['readings'][bme])
+        self.assertNotIn('humidity', recorder.status['readings'][bme])
+
     def test_config_resolves_database_relative_to_file(self):
         config_path = Path(self.tmp.name) / 'config.json'
         config_path.write_text(json.dumps({'moonraker_url': 'http://printer.local:7125', 'database': 'data/test.db'}))

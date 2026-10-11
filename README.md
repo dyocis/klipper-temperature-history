@@ -25,8 +25,8 @@ run independently on the printer's Linux host or another always-on Linux machine
 - Provide live readings and 1-hour, 24-hour, 7-day, and 30-day chart views.
 - Select sensors and group heaters, motors, and electronics for readable charts.
 - A Nevermore group appears when recorded sensors include Nevermore/StealthMax
-  names, `SM_*` channels (including `_SM_*`), or `BME_IN`, `BME_OUT`, `SGP_IN`,
-  and `SGP_OUT`. These remain available under All sensors and are excluded from
+  names, `SM_*` channels (including `_SM_*`), or `BME_IN` and `BME_OUT`.
+  These remain available under All sensors and are excluded from
   Electronics & other. Grouping uses existing Moonraker telemetry only.
 - Record heater targets and print-state changes alongside temperatures.
 - Mark starts, finishes, pauses, resumes, cancellations, and errors on the graph.
@@ -71,7 +71,11 @@ shell for manual runs. The key stays on the recorder host and never reaches the
 browser. Local settings, credentials, databases, and logs are ignored by Git.
 
 Klipper sometimes exposes non-temperature values through temperature interfaces.
-`HOT_P`, `HOT_V`, `HOT_I`, and `plot_voc` channels are automatically excluded.
+`HOT_P`, `HOT_V`, `HOT_I`, SGP gas-sensor types (including SGP40), and `plot_voc`
+channels are automatically excluded. Gas/VOC readings cannot be enabled through
+`include_nonstandard_sensors`. BME temperature is recorded; pressure and humidity
+fields are ignored. Previously recorded excluded channels are hidden from the
+dashboard and CSV API while their data ages out under normal retention.
 Check other custom sensors' units and use `exclude_sensors` as needed. Missing
 readings appear as gaps rather than zero. This version has no additional
 Nevermore telemetry source.
