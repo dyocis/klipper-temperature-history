@@ -85,7 +85,8 @@ Moonraker at `http://127.0.0.1:7125`. If running on a separate host, copy and ed
 `config.local.json` before installing, setting `moonraker_url` to your printer.
 
 The installer preserves existing settings and data, installs its own service,
-and starts recording. It does not restart Klipper or Moonraker. The installation
+and restarts that service so updated server code takes effect. It does not restart
+Klipper or Moonraker. The installation
 path must have no spaces, percent signs, quotes, or backslashes.
 
 For manual use without systemd:

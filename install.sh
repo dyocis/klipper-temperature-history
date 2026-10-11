@@ -45,7 +45,8 @@ WantedBy=multi-user.target
 EOF
 sudo install -m 644 "$service_file" /etc/systemd/system/klipper-temperature-history.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now klipper-temperature-history.service
+sudo systemctl enable klipper-temperature-history.service
+sudo systemctl restart klipper-temperature-history.service
 sudo systemctl is-active --quiet klipper-temperature-history.service
 echo 'Installed. Dashboard: http://<printer-address>:7132/'
 echo 'Settings: config.local.json. Restart after edits: sudo systemctl restart klipper-temperature-history'

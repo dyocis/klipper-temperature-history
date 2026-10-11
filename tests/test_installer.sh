@@ -30,7 +30,8 @@ export PATH="$test_dir/bin:$PATH"
 bash "$test_dir/project/install.sh"
 grep -q 'User=printeruser' "$test_dir/rendered.service"
 grep -q 'server.py --config' "$test_dir/rendered.service"
-grep -q 'enable --now klipper-temperature-history.service' "$test_dir/calls"
+grep -q 'enable klipper-temperature-history.service' "$test_dir/calls"
+grep -q 'restart klipper-temperature-history.service' "$test_dir/calls"
 python3 - "$test_dir/project/config.local.json" <<'PY'
 import json, sys
 path = sys.argv[1]
