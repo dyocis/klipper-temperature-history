@@ -24,6 +24,10 @@ run independently on the printer's Linux host or another always-on Linux machine
 - Retain 30 days of history by default, with configurable sampling and retention.
 - Provide live readings and 1-hour, 24-hour, 7-day, and 30-day chart views.
 - Select sensors and group heaters, motors, and electronics for readable charts.
+- A Nevermore group appears when recorded sensors include Nevermore/StealthMax
+  names, `SM_*` channels (including `_SM_*`), or `BME_IN`, `BME_OUT`, `SGP_IN`,
+  and `SGP_OUT`. These remain available under All sensors and are excluded from
+  Electronics & other. Grouping uses existing Moonraker telemetry only.
 - Record heater targets and print-state changes alongside temperatures.
 - Mark starts, finishes, pauses, resumes, cancellations, and errors on the graph.
 - Show gaps for missing or disconnected sensors rather than inventing readings.

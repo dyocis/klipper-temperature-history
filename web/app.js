@@ -10,7 +10,11 @@ function eventLabel(event){
   return `${event.state} status observed`;
 }
 let sensors = [], selected = new Set(), hours = 1, history = {series:{},events:[]}, status = {}, bounds = null, busy = false, initialized = false;
-function group(sensor) { return sensor.kind === 'heater' ? 'heater' : /motor/i.test(sensor.name) ? 'motor' : 'electronics'; }
+function group(sensor) {
+  const name = sensor.name.split(' ').slice(1).join(' ').replace(/^_+/, '');
+  if (/nevermore|stealthmax/i.test(sensor.name) || /^(?:SM_|BME_(?:IN|OUT)$|SGP_(?:IN|OUT)$)/i.test(name)) return 'nevermore';
+  return sensor.kind === 'heater' ? 'heater' : /motor/i.test(sensor.name) ? 'motor' : 'electronics';
+}
 function visible() { return sensors.filter(s => $('group').value === 'all' || group(s) === $('group').value); }
 function active() { return visible().filter(s => selected.has(s.name)); }
 function color(sensor) { return palette[sensors.indexOf(sensor) % palette.length]; }
@@ -37,6 +41,7 @@ async function refresh() {
   try {
     const response=await fetch('/api/status');if(!response.ok)throw Error('Status unavailable');status=await response.json();
     const oldNames=new Set(sensors.map(s=>s.name));sensors=status.sensors;
+    $('nevermoreGroup').hidden=!sensors.some(s=>group(s)==='nevermore');
     if(!initialized){selected=new Set(sensors.map(s=>s.name));initialized=true;}else for(const s of sensors)if(!oldNames.has(s.name))selected.add(s.name);
     $('connection').textContent=status.state==='recording'?'● Recording':status.state==='offline'?'● Printer offline':'● Starting';
     $('summary').textContent=`${sensors.length} sensors · every ${status.sample_seconds}s · ${status.retention_days} days retained · Last sample: ${status.last_sample?new Date(status.last_sample*1000).toLocaleString():'waiting'}`;
