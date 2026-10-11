@@ -2,6 +2,8 @@
 
 A standalone temperature-history monitor for Klipper printers using Moonraker.
 
+![Temperature History dashboard showing selectable sensors, temperature graphs, heater targets, and print activity](docs/images/temperature-history-dashboard.png)
+
 ## Project status
 
 Initial implementation with a persistent recorder, dashboard, and Git-based Linux
