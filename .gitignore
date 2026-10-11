@@ -1,0 +1,31 @@
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+config.local.*
+*.local.json
+
+# Recorded data and logs
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.log
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
