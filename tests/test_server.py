@@ -74,7 +74,13 @@ class HistoryTests(unittest.TestCase):
         self.store.record(150, [], [], ('printing', 'second.gcode'))
         self.store.record(160, [], [], ('cancelled', 'second.gcode'))
         kinds = [e['kind'] for e in self.store.history(100, 170, [])['events']]
-        self.assertEqual(kinds, ['state', 'print_started', 'print_paused', 'print_resumed', 'print_finished', 'print_started', 'print_cancelled'])
+        self.assertEqual(kinds, ['status_observed', 'print_started', 'print_paused', 'print_resumed', 'print_finished', 'print_started', 'print_cancelled'])
+
+    def test_preexisting_completed_print_has_no_finish_marker(self):
+        self.store.record(100, [], [], ('complete', 'old.gcode'))
+        event = self.store.history(90, 110, [])['events'][0]
+        self.assertEqual(event['kind'], 'status_observed')
+        self.assertEqual(event['state'], 'complete')
 
     def test_midprint_startup_is_not_labeled_actual_start(self):
         self.store.record(100, [], [], ('printing', 'cube.gcode'))

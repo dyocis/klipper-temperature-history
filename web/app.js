@@ -2,6 +2,13 @@
 const $ = id => document.getElementById(id);
 const palette = ['#69dfb8','#62b8ff','#ffbf69','#dc8dff','#ff7c91','#d8e86b','#7bdbdf','#e7a580','#8ca8ff','#bddeab','#b9a194','#f4d3ec'];
 const markers={print_started:['Start','#69dfb8'],print_finished:['Finish','#62b8ff'],print_cancelled:['Cancelled','#ffbf69'],print_error:['Error','#ff7c91'],print_paused:['Paused','#dc8dff'],print_resumed:['Resumed','#69dfb8'],printing_detected:['Printing detected','#8e9eaf']};
+function eventLabel(event){
+  if(markers[event.kind])return markers[event.kind][0];
+  if(event.state==='complete')return 'Complete status observed — finish time unknown';
+  if(event.state==='cancelled')return 'Cancelled status observed — cancellation time unknown';
+  if(event.state==='error')return 'Error status observed — error time unknown';
+  return `${event.state} status observed`;
+}
 let sensors = [], selected = new Set(), hours = 1, history = {series:{},events:[]}, status = {}, bounds = null, busy = false, initialized = false;
 function group(sensor) { return sensor.kind === 'heater' ? 'heater' : /motor/i.test(sensor.name) ? 'motor' : 'electronics'; }
 function visible() { return sensors.filter(s => $('group').value === 'all' || group(s) === $('group').value); }
@@ -38,7 +45,7 @@ async function refresh() {
     const h=await fetch('/api/history?'+new URLSearchParams({start:String(start),end:String(end)}));if(!h.ok)throw Error('History unavailable');
     history={...await h.json(),start,end};renderSensors();draw();exportLink();
     $('events').replaceChildren();for(const event of history.events.slice().reverse()){
-      const p=document.createElement('p');p.textContent=`${new Date(event.ts*1000).toLocaleString()} · ${markers[event.kind]?.[0]||event.state}${event.filename?' · '+event.filename:''}`;$('events').append(p);
+      const p=document.createElement('p');p.textContent=`${new Date(event.ts*1000).toLocaleString()} · ${eventLabel(event)}${event.filename?' · '+event.filename:''}`;$('events').append(p);
     }
     if(!history.events.length)$('events').textContent='No print-state changes in this range.';
   } catch(error) { $('connection').textContent='● Monitor unavailable';$('summary').textContent='Unable to refresh. Retrying automatically.'; }

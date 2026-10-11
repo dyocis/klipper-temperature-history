@@ -81,7 +81,7 @@ class Store:
                 if previous == event:
                     return
                 state, filename = event
-                kind = {"complete": "print_finished", "cancelled": "print_cancelled", "error": "print_error", "paused": "print_paused"}.get(state, "state") if previous else "state"
+                kind = {"complete": "print_finished", "cancelled": "print_cancelled", "error": "print_error", "paused": "print_paused"}.get(state, "state") if previous else "status_observed"
                 if state == 'printing':
                     kind = 'print_resumed' if previous and previous[0] == 'paused' and previous[1] == filename else 'print_started' if previous else 'printing_detected'
                 db.execute("INSERT INTO events(ts,state,filename,kind) VALUES(?,?,?,?)", (ts, state, filename, kind))

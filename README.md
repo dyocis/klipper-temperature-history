@@ -134,6 +134,9 @@ Print markers are based on sampled Moonraker print-state changes, accurate to
 approximately the sampling interval while connected. Starting the recorder
 mid-print shows "Printing detected" rather than inventing a start time. Events
 that happen entirely while the recorder is offline cannot be reconstructed.
+If a print is already complete when recording begins, the activity list shows
+when its status was observed and explicitly says the finish time is unknown.
+That entry is not a print-finish marker.
 
 ## Development
 
