@@ -1,0 +1,11 @@
+{
+  "moonraker_url": "http://127.0.0.1:7125",
+  "api_key_env": "MOONRAKER_API_KEY",
+  "bind": "0.0.0.0",
+  "port": 7132,
+  "sample_seconds": 10,
+  "retention_days": 30,
+  "database": "data/history.sqlite3",
+  "exclude_sensors": [],
+  "include_nonstandard_sensors": []
+}

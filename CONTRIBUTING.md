@@ -1,6 +1,6 @@
 # Contributing
 
-This project is in its initial design stage. Issues describing supported sensor
+This project is in its initial implementation stage. Issues describing supported sensor
 objects, desired chart behavior, or deployment needs are welcome.
 
 Keep changes independent of Nevermore projects and printer control interfaces.
