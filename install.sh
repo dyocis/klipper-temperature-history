@@ -23,7 +23,7 @@ service_file="$(mktemp)"
 trap 'rm -f "$service_file"' EXIT
 cat > "$service_file" <<EOF
 [Unit]
-Description=Klipper Temperature History
+Description=Temperature History
 After=network-online.target
 Wants=network-online.target
 

@@ -266,9 +266,9 @@ def handler_for(recorder, store):
                                 buf.seek(0)
                                 buf.truncate(0)
                         self.wfile.write(buf.getvalue().encode())
-                elif parsed.path in ("/", "/app.js", "/styles.css"):
-                    name = {"/": "index.html", "/app.js": "app.js", "/styles.css": "styles.css"}[parsed.path]
-                    mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript", "styles.css": "text/css"}[name]
+                elif parsed.path in ("/", "/app.js", "/styles.css", "/favicon.svg"):
+                    name = {"/": "index.html", "/app.js": "app.js", "/styles.css": "styles.css", "/favicon.svg": "favicon.svg"}[parsed.path]
+                    mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript", "styles.css": "text/css", "favicon.svg": "image/svg+xml"}[name]
                     self.send_bytes((ROOT / "web" / name).read_bytes(), mime)
                 else:
                     self.json({"error": "Not found"}, 404)

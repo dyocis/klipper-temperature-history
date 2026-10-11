@@ -1,4 +1,4 @@
-# Klipper Temperature History
+# Temperature History
 
 A standalone temperature-history monitor for Klipper printers using Moonraker.
 
@@ -99,6 +99,22 @@ python3 server.py --config config.local.json
 On Windows use `python` instead of `python3`. The recording host must stay on.
 
 ## Operation and updates
+
+### Optional Mainsail sidebar link
+
+After installing, add a link using the address your browser uses for the dashboard:
+
+```sh
+python3 add_mainsail_link.py --dashboard-url http://printer.local:7132/
+```
+
+This explicit setup action updates Mainsail's `.theme/navi.json` through Moonraker,
+preserves other entries, and backs up the original under `data/`. Repeating it
+updates the existing Temperature History entry rather than adding duplicates.
+Refresh Mainsail afterward. The recorder itself remains read-only; it never edits
+Mainsail settings during normal operation. Sidebar integration is optional and
+does not change any Nevermore project files. The red thermometer SVG favicon is
+served locally with the dashboard.
 
 ```sh
 systemctl status klipper-temperature-history
