@@ -23,6 +23,7 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+dist/
 
 # Editors and OS files
 .vscode/

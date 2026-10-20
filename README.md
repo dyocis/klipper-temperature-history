@@ -2,13 +2,17 @@
 
 A standalone temperature-history monitor for Klipper printers using Moonraker.
 
+**[Download the latest release](https://github.com/dyocis/klipper-temperature-history/releases/latest)**
+or follow the [installation guide](INSTALL.md). ZIP and tar.gz packages include
+the standalone Linux installer; Git is not required to install a download.
+
 ![Temperature History dashboard showing selectable sensors, temperature graphs, heater targets, and print activity](docs/images/temperature-history-dashboard.png)
 
 ## Project status
 
-Initial implementation with a persistent recorder, dashboard, and Git-based Linux
+Version 0.1.0 includes a persistent recorder, dashboard, and standalone Linux
 installer. Requires Python 3.9+; no third-party Python packages or external web
-assets are needed. This is not yet a tagged stable release.
+assets are needed. This is the first packaged release.
 
 ## Purpose
 
@@ -85,6 +89,8 @@ readings appear as gaps rather than zero. This version has no additional
 Nevermore telemetry source.
 
 ## Installation
+
+For a release download, see [INSTALL.md](INSTALL.md). To install directly from Git:
 
 Run on your printer's Linux host as its normal user (systemd and sudo required):
 
@@ -215,6 +221,11 @@ bash -n install.sh
 ```
 
 Node is needed only for the optional JavaScript syntax check.
+
+Maintainers can build release ZIP/tar.gz archives and `SHA256SUMS` from a committed
+revision with `python3 scripts/build_release.py`. Output is written to ignored
+`dist/`; only approved public source and asset paths are packaged, using Git's
+committed file contents rather than local configuration or working data.
 
 ## Contributing
 
