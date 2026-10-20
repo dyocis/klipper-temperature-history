@@ -51,7 +51,7 @@ class HistoryTests(unittest.TestCase):
     def test_removed_sensor_becomes_gap(self):
         self.store.record(1, [('old', 40, None)], [('old', 'Old', 'sensor')])
         recorder = Recorder(self.config, self.store)
-        with patch.object(recorder, 'get', side_effect=[{'status': {'heaters': {}}}, {'status': {}}]):
+        with patch.object(recorder, 'get', side_effect=[{'status': {'heaters': {}}}, {'status': {}}]), patch('server.time.time', return_value=2):
             recorder.sample()
         rows = list(self.store.export(0, 9999999999, ['old']))
         self.assertIsNone(rows[-1][2])

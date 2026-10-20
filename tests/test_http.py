@@ -5,7 +5,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from server import Recorder, Store, handler_for
 
@@ -50,10 +50,32 @@ class ApiTests(unittest.TestCase):
             error.exception.close()
 
     def test_assets_and_status(self):
-        for route in ('/', '/styles.css', '/app.js', '/favicon.svg', '/favicon.ico', '/favicon.png'):
+        for route in ('/', '/styles.css', '/groups.css', '/app.js', '/favicon.svg', '/favicon.ico', '/favicon.png'):
             with urlopen(self.base + route) as response:
                 self.assertGreater(len(response.read()), 100)
         with urlopen(self.base + '/api/status') as response:
             status = json.load(response)
         self.assertEqual(status['sensors'][0]['name'], 'heater_bed')
         self.assertNotIn('moonraker_url', status)
+
+    def test_group_writes_and_cross_browser_visibility(self):
+        payload = {'name': 'Heated bed', 'sensors': ['heater_bed']}
+        request = Request(self.base+'/api/groups', data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', 'Origin': self.base})
+        with urlopen(request) as response:
+            saved = json.load(response)
+        with urlopen(self.base+'/api/status') as response:
+            self.assertEqual(json.load(response)['groups'], saved['groups'])
+        request = Request(self.base+'/api/groups/delete', data=json.dumps({'id': saved['id']}).encode(), headers={'Content-Type': 'application/json'})
+        with urlopen(request) as response:
+            self.assertEqual(json.load(response)['groups'], [])
+
+    def test_cross_origin_and_non_json_group_writes_rejected(self):
+        for headers, data, code in [({'Origin': 'http://other.example', 'Content-Type': 'application/json'}, b'{}', 403),
+                                    ({'Content-Type': 'text/plain'}, b'{}', 400),
+                                    ({'Content-Type': 'application/json'}, b'[]', 400),
+                                    ({'Content-Type': 'application/json'}, b'{', 400)]:
+            request = Request(self.base+'/api/groups', data=data, headers=headers)
+            with self.assertRaises(HTTPError) as error:
+                urlopen(request)
+            self.assertEqual(error.exception.code, code)
+            error.exception.close()

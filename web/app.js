@@ -10,12 +10,17 @@ function eventLabel(event){
   return `${event.state} status observed`;
 }
 let sensors = [], selected = new Set(), hours = 1, history = {series:{},events:[]}, status = {}, bounds = null, busy = false, initialized = false;
+let customGroups = [], editingGroup = null, savingGroup = false;
+function chosenGroup() { return customGroups.find(g => 'custom:'+g.id === $('group').value); }
 function group(sensor) {
   const name = sensor.name.split(' ').slice(1).join(' ').replace(/^_+/, '');
   if (/nevermore|stealthmax/i.test(sensor.name) || /^(?:SM_|BME_(?:IN|OUT)$|SGP_(?:IN|OUT)$)/i.test(name)) return 'nevermore';
   return sensor.kind === 'heater' ? 'heater' : /motor/i.test(sensor.name) ? 'motor' : 'electronics';
 }
-function visible() { return sensors.filter(s => $('group').value === 'all' || group(s) === $('group').value); }
+function visible() {
+  const custom = chosenGroup();
+  return sensors.filter(s => custom ? custom.sensors.includes(s.name) : $('group').value === 'all' || group(s) === $('group').value);
+}
 function active() { return visible().filter(s => selected.has(s.name)); }
 function color(sensor) { return palette[sensors.indexOf(sensor) % palette.length]; }
 function format(value) { return value == null ? '—' : `${value.toFixed(1)}°`; }
@@ -36,15 +41,69 @@ function exportLink() {
   $('export').href='/api/export?'+q;
   $('export').hidden=active().length===0;
 }
+function renderGroups(preferred = $('group').value) {
+  const options = $('customGroups'); options.replaceChildren();
+  for(const saved of customGroups){
+    const option = document.createElement('option'); option.value='custom:'+saved.id; option.textContent=saved.name; options.append(option);
+  }
+  options.hidden=customGroups.length===0;
+  $('group').value=preferred;
+  if(!$('group').value)$('group').value='all';
+  $('editGroup').disabled=!chosenGroup();
+  updateChartTitle();
+}
+function updateChartTitle(){
+  const label=$('ranges').querySelector('.active').textContent.toLowerCase();
+  $('chartTitle').textContent=(chosenGroup()?chosenGroup().name+' · ':'')+'Last '+label;
+}
+function selectGroup(){
+  const custom=chosenGroup();
+  if(custom)selected=new Set(custom.sensors);
+  $('editGroup').disabled=!custom;updateChartTitle();renderSensors();draw();exportLink();
+}
+function openGroupEditor(edit){
+  if(savingGroup)return;
+  editingGroup=edit?chosenGroup():null;
+  $('groupDialogTitle').textContent=editingGroup?'Edit group':'Create group';
+  $('groupName').value=editingGroup?.name||'';
+  $('groupError').textContent='';$('deleteGroup').hidden=!editingGroup;
+  const members=new Set(editingGroup?editingGroup.sensors:active().map(s=>s.name));
+  $('groupChannels').replaceChildren();
+  for(const sensor of sensors){
+    const label=document.createElement('label');label.className='group-channel';
+    const check=document.createElement('input');check.type='checkbox';check.value=sensor.name;check.checked=members.has(sensor.name);
+    const text=document.createElement('span');text.textContent=sensor.label;
+    label.append(check,text);$('groupChannels').append(label);
+  }
+  $('groupDialog').showModal();$('groupName').focus();
+}
+async function saveGroup(remove=false){
+  if(savingGroup)return;
+  const members=Array.from($('groupChannels').querySelectorAll('input:checked'),check=>check.value);
+  if(!remove&&(!$('groupName').value.trim()||members.length===0)){
+    $('groupError').textContent='Enter a name and select at least one channel.';return;
+  }
+  savingGroup=true;$('saveGroup').disabled=true;$('deleteGroup').disabled=true;$('groupError').textContent='';
+  try{
+    const payload=remove?{id:editingGroup.id}:{name:$('groupName').value,sensors:members,...(editingGroup?{id:editingGroup.id}:{})};
+    const response=await fetch(remove?'/api/groups/delete':'/api/groups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await response.json();if(!response.ok)throw Error(data.error||'Unable to save group.');
+    customGroups=data.groups;renderGroups(remove?'all':'custom:'+data.id);selectGroup();$('groupDialog').close();
+  }catch(error){$('groupError').textContent=error.message;}
+  finally{savingGroup=false;$('saveGroup').disabled=false;$('deleteGroup').disabled=false;}
+}
 async function refresh() {
   if(busy)return;busy=true;
   try {
     const response=await fetch('/api/status');if(!response.ok)throw Error('Status unavailable');status=await response.json();
     const oldNames=new Set(sensors.map(s=>s.name));sensors=status.sensors;
+    const previousCustom=chosenGroup();customGroups=status.groups||[];renderGroups();
+    if(chosenGroup()&&JSON.stringify(previousCustom?.sensors)!==JSON.stringify(chosenGroup().sensors))selected=new Set(chosenGroup().sensors);
     $('nevermoreGroup').hidden=!sensors.some(s=>group(s)==='nevermore');
-    if(!initialized){selected=new Set(sensors.map(s=>s.name));initialized=true;}else for(const s of sensors)if(!oldNames.has(s.name))selected.add(s.name);
+    if(!initialized){selected=new Set(sensors.map(s=>s.name));initialized=true;}else for(const s of sensors)if(!oldNames.has(s.name)&&!chosenGroup())selected.add(s.name);
+    const known=new Set(sensors.map(s=>s.name));selected=new Set([...selected].filter(name=>known.has(name)));
     $('connection').textContent=status.state==='recording'?'● Recording':status.state==='offline'?'● Printer offline':'● Starting';
-    $('summary').textContent=`${sensors.length} sensors · every ${status.sample_seconds}s · ${status.retention_days} days retained · Last sample: ${status.last_sample?new Date(status.last_sample*1000).toLocaleString():'waiting'}`;
+    $('summary').textContent=`${sensors.length} sensors · every ${status.sample_seconds}s · ${status.retention_days} days retained · ${status.stale_channel_hours?'Inactive channels removed after '+status.stale_channel_hours+'h':'Inactive channel cleanup disabled'} · Last sample: ${status.last_sample?new Date(status.last_sample*1000).toLocaleString():'waiting'}`;
     $('excluded').textContent=status.excluded?.length?`Excluded non-temperature or configured channels: ${status.excluded.join(', ')}`:'';
     const end=Date.now()/1000,start=end-hours*3600;
     const h=await fetch('/api/history?'+new URLSearchParams({start:String(start),end:String(end)}));if(!h.ok)throw Error('History unavailable');
@@ -79,8 +138,15 @@ function draw() {
   let markerIndex=0;
   for(const event of history.events){const marker=markers[event.kind];if(!marker)continue;const xx=x(event.ts);ctx.strokeStyle=marker[1];ctx.globalAlpha=.75;ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(xx,pad.t);ctx.lineTo(xx,h-pad.b);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;ctx.fillStyle=marker[1];ctx.textAlign=xx>w-100?'right':'left';ctx.fillText(marker[0],xx+(xx>w-100?-4:4),pad.t+12+(markerIndex++%3)*14);}ctx.textAlign='left';
 }
-$('ranges').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;hours=Number(button.dataset.hours);for(const b of $('ranges').children)b.classList.toggle('active',b===button);$('chartTitle').textContent=`Last ${button.textContent.toLowerCase()}`;refresh();});
-$('group').addEventListener('change',()=>{renderSensors();draw();exportLink();});$('targets').addEventListener('change',draw);
+$('ranges').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;hours=Number(button.dataset.hours);for(const b of $('ranges').children)b.classList.toggle('active',b===button);updateChartTitle();refresh();});
+$('group').addEventListener('change',selectGroup);$('targets').addEventListener('change',draw);
+$('newGroup').addEventListener('click',()=>openGroupEditor(false));$('editGroup').addEventListener('click',()=>openGroupEditor(true));
+$('groupForm').addEventListener('submit',event=>{event.preventDefault();saveGroup();});
+$('cancelGroup').addEventListener('click',()=>{if(!savingGroup)$('groupDialog').close();});
+$('groupDialog').addEventListener('cancel',event=>{if(savingGroup)event.preventDefault();});
+$('deleteGroup').addEventListener('click',()=>saveGroup(true));
+for(const [id,checked] of [['groupSelectAll',true],['groupSelectNone',false]])$(id).addEventListener('click',()=>{for(const input of $('groupChannels').querySelectorAll('input'))input.checked=checked;});
+$('selectNone').addEventListener('click',()=>{for(const s of visible())selected.delete(s.name);renderSensors();draw();exportLink();});
 $('selectAll').addEventListener('click',()=>{for(const s of visible())selected.add(s.name);renderSensors();draw();exportLink();});
 $('chart').addEventListener('mousemove',event=>{if(!bounds)return;const pixel=event.offsetX,t=bounds.start+(pixel-bounds.pad.l)/(bounds.w-bounds.pad.l-bounds.pad.r)*(bounds.end-bounds.start);const readings=[];for(const s of active()){const data=history.series[s.name]||[];let closest=null;for(const p of data)if(!closest||Math.abs(p.ts-t)<Math.abs(closest.ts-t))closest=p;if(closest&&Math.abs(closest.ts-t)<Math.max(status.sample_seconds*3,history.bucket_seconds*1.5))readings.push(`${s.label}: ${format(closest.value)}`);}for(const e of history.events)if(markers[e.kind]&&Math.abs(bounds.x(e.ts)-pixel)<8)readings.unshift(`${markers[e.kind][0]}: ${e.filename||'unnamed print'}`);$('hover').textContent=`${new Date(t*1000).toLocaleString()} · ${readings.join(' · ')||'No readings'}`;});
 new ResizeObserver(draw).observe($('chart'));refresh();setInterval(refresh,10000);

@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -35,6 +36,9 @@ def load_config(path):
     if not isinstance(config["port"], int) or config["port"] > 65535:
         raise ValueError("Invalid port")
     config.setdefault("bind", "127.0.0.1")
+    config.setdefault("stale_channel_hours", 6)
+    if not number(config['stale_channel_hours']) or not 0 <= config['stale_channel_hours'] <= 8760:
+        raise ValueError('stale_channel_hours must be between 0 (disabled) and 8760')
     config.setdefault("exclude_sensors", [])
     config.setdefault("include_nonstandard_sensors", [])
     config.setdefault("api_key_env", "MOONRAKER_API_KEY")
@@ -59,11 +63,21 @@ class Store:
                     PRIMARY KEY(ts, sensor));
                 CREATE INDEX IF NOT EXISTS samples_sensor_time ON samples(sensor, ts);
                 CREATE TABLE IF NOT EXISTS events(ts REAL, state TEXT, filename TEXT, kind TEXT NOT NULL DEFAULT 'state');
+                CREATE TABLE IF NOT EXISTS custom_groups(id TEXT PRIMARY KEY, name TEXT UNIQUE COLLATE NOCASE, members TEXT);
+                CREATE TABLE IF NOT EXISTS retired_sensors(name TEXT PRIMARY KEY);
             """)
             if 'kind' not in [row[1] for row in db.execute('PRAGMA table_info(events)')]:
                 db.execute("ALTER TABLE events ADD COLUMN kind TEXT NOT NULL DEFAULT 'state'")
             if 'is_temperature' not in [row[1] for row in db.execute('PRAGMA table_info(sensors)')]:
                 db.execute("ALTER TABLE sensors ADD COLUMN is_temperature INTEGER NOT NULL DEFAULT 1")
+            columns = {row[1] for row in db.execute('PRAGMA table_info(sensors)')}
+            if not {'first_seen', 'last_valid'} <= columns:
+                for column in ('first_seen', 'last_valid'):
+                    if column not in columns:
+                        db.execute(f'ALTER TABLE sensors ADD COLUMN {column} REAL')
+                db.execute('''UPDATE sensors SET first_seen=COALESCE(
+                    (SELECT MIN(ts) FROM samples WHERE sensor=sensors.name), ?),
+                    last_valid=(SELECT MAX(ts) FROM samples WHERE sensor=sensors.name AND value IS NOT NULL)''', (time.time(),))
 
     @contextmanager
     def connect(self):
@@ -76,8 +90,16 @@ class Store:
 
     def record(self, ts, readings, sensors, event=None):
         with self.connect() as db:
-            db.executemany("INSERT OR REPLACE INTO sensors(name,label,kind,is_temperature) VALUES(?,?,?,1)", sensors)
-            db.executemany("INSERT INTO samples VALUES(?,?,?,?)", [(ts, name, value, target) for name, value, target in readings])
+            valid = {name for name, value, _ in readings if number(value)}
+            db.executemany('DELETE FROM retired_sensors WHERE name=?', [(name,) for name in valid])
+            retired = {row[0] for row in db.execute('SELECT name FROM retired_sensors')}
+            for name, label, kind in sensors:
+                if name not in retired:
+                    db.execute('''INSERT INTO sensors(name,label,kind,is_temperature,first_seen,last_valid)
+                        VALUES(?,?,?,1,?,NULL) ON CONFLICT(name) DO UPDATE SET
+                        label=excluded.label,kind=excluded.kind,is_temperature=1''', (name, label, kind, ts))
+            db.executemany('UPDATE sensors SET last_valid=? WHERE name=?', [(ts, name) for name in valid])
+            db.executemany("INSERT INTO samples VALUES(?,?,?,?)", [(ts, name, value, target) for name, value, target in readings if name not in retired])
             if event:
                 previous = db.execute("SELECT state,filename FROM events ORDER BY ts DESC LIMIT 1").fetchone()
                 if previous == event:
@@ -101,6 +123,55 @@ class Store:
         # Keep existing data for retention/backup, but never offer it as degrees C.
         with self.connect() as db:
             db.executemany('UPDATE sensors SET is_temperature=0 WHERE name=?', [(name,) for name in names])
+
+    def expire_stale(self, cutoff):
+        with self.connect() as db:
+            names = [row[0] for row in db.execute('SELECT name FROM sensors WHERE COALESCE(last_valid,first_seen) < ?', (cutoff,))]
+            db.executemany('INSERT OR IGNORE INTO retired_sensors VALUES(?)', [(name,) for name in names])
+            db.executemany('DELETE FROM samples WHERE sensor=?', [(name,) for name in names])
+            db.executemany('DELETE FROM sensors WHERE name=?', [(name,) for name in names])
+            if names:
+                for identifier, members in db.execute('SELECT id,members FROM custom_groups').fetchall():
+                    db.execute('UPDATE custom_groups SET members=? WHERE id=?',
+                               (json.dumps([name for name in json.loads(members) if name not in names]), identifier))
+        return names
+
+    def groups(self):
+        with self.connect() as db:
+            return [{'id': row[0], 'name': row[1], 'sensors': json.loads(row[2])}
+                    for row in db.execute('SELECT id,name,members FROM custom_groups ORDER BY name COLLATE NOCASE')]
+
+    def save_group(self, payload):
+        name, members, identifier = payload.get('name'), payload.get('sensors'), payload.get('id')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 60:
+            raise ValueError('Group name must contain 1–60 characters')
+        if not isinstance(members, list) or not 1 <= len(members) <= 100 or any(not isinstance(member, str) for member in members):
+            raise ValueError('Select between 1 and 100 channels')
+        if identifier is not None and not isinstance(identifier, str):
+            raise ValueError('Invalid group')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            known = {row[0] for row in db.execute('SELECT name FROM sensors WHERE is_temperature=1')}
+            if any(member not in known for member in members):
+                raise ValueError('A selected channel is no longer available; reopen the group editor')
+            if identifier and not db.execute('SELECT 1 FROM custom_groups WHERE id=?', (identifier,)).fetchone():
+                raise ValueError('Group no longer exists')
+            if not identifier and db.execute('SELECT COUNT(*) FROM custom_groups').fetchone()[0] >= 100:
+                raise ValueError('Maximum of 100 groups reached')
+            identifier = identifier or uuid.uuid4().hex
+            try:
+                db.execute('''INSERT INTO custom_groups VALUES(?,?,?) ON CONFLICT(id)
+                    DO UPDATE SET name=excluded.name,members=excluded.members''',
+                           (identifier, name.strip(), json.dumps(list(dict.fromkeys(members)))))
+            except sqlite3.IntegrityError:
+                raise ValueError('A group with that name already exists') from None
+        return identifier
+
+    def delete_group(self, identifier):
+        if not isinstance(identifier, str):
+            raise ValueError('Invalid group')
+        with self.connect() as db:
+            db.execute('DELETE FROM custom_groups WHERE id=?', (identifier,))
 
     def history(self, start, end, names, buckets=1200):
         # Preserve min/max and null gaps in long-range views rather than losing peaks.
@@ -131,6 +202,7 @@ class Recorder:
         self.lock = threading.Lock()
         self.status = {"state": "starting", "last_sample": None, "readings": {}, "excluded": []}
         self.last_event = None
+        self.last_channel_cleanup = 0
 
     def get(self, route, params=None):
         url = self.config["moonraker_url"] + route
@@ -188,6 +260,14 @@ class Recorder:
         print_stats = status.get("print_stats", {})
         event = (str(print_stats.get("state", "unknown")), str(print_stats.get("filename", "")))
         self.store.record(ts, readings, metadata, event if event != self.last_event else None)
+        stale_hours = self.config.get('stale_channel_hours', 6)
+        if stale_hours and ts - self.last_channel_cleanup >= 300:
+            removed = self.store.expire_stale(ts - stale_hours * 3600)
+            if removed:
+                logging.info('Removed %s stale channels', len(removed))
+            self.last_channel_cleanup = ts
+        known = {sensor['name'] for sensor in self.store.sensors()}
+        current = {name: value for name, value in current.items() if name in known}
         self.last_event = event
         with self.lock:
             self.status = {"state": "recording", "last_sample": ts, "readings": current,
@@ -234,13 +314,43 @@ def handler_for(recorder, store):
         def json(self, payload, status=200):
             self.send_bytes(json.dumps(payload, allow_nan=False).encode(), "application/json", status)
 
+        def do_POST(self):
+            if self.path not in ('/api/groups', '/api/groups/delete'):
+                self.json({'error': 'Not found'}, 404)
+                return
+            # Only same-origin JSON writes; the printer API remains read-only.
+            origin = self.headers.get('Origin')
+            if origin and urlparse(origin).netloc != self.headers.get('Host'):
+                self.json({'error': 'Cross-origin writes are not allowed'}, 403)
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 65536 or self.headers.get_content_type() != 'application/json':
+                    raise ValueError('Expected a JSON request of at most 64 KiB')
+                payload = json.loads(self.rfile.read(length))
+                if not isinstance(payload, dict):
+                    raise ValueError('Expected a JSON object')
+                if self.path == '/api/groups/delete':
+                    store.delete_group(payload.get('id'))
+                    identifier = None
+                else:
+                    identifier = store.save_group(payload)
+                self.json({'groups': store.groups(), 'id': identifier})
+            except (ValueError, UnicodeError) as exc:
+                self.json({'error': str(exc)}, 400)
+            except sqlite3.Error:
+                logging.exception('Group update failed')
+                self.json({'error': 'Could not save groups; retry shortly'}, 500)
+
         def do_GET(self):
             parsed = urlparse(self.path)
             try:
                 if parsed.path == "/api/status":
                     with recorder.lock:
                         status = dict(recorder.status)
-                    self.json({**status, "sensors": store.sensors(), "sample_seconds": recorder.config["sample_seconds"], "retention_days": recorder.config["retention_days"]})
+                    self.json({**status, "sensors": store.sensors(), 'groups': store.groups(),
+                               'stale_channel_hours': recorder.config.get('stale_channel_hours', 6),
+                               "sample_seconds": recorder.config["sample_seconds"], "retention_days": recorder.config["retention_days"]})
                 elif parsed.path in ("/api/history", "/api/export"):
                     query = parse_qs(parsed.query)
                     end = float(query.get("end", [time.time()])[0])
@@ -275,6 +385,8 @@ def handler_for(recorder, store):
                                 buf.seek(0)
                                 buf.truncate(0)
                         self.wfile.write(buf.getvalue().encode())
+                elif parsed.path == '/groups.css':
+                    self.send_bytes((ROOT / 'web' / 'groups.css').read_bytes(), 'text/css')
                 elif parsed.path in ("/", "/app.js", "/styles.css", "/favicon.svg", "/favicon.ico", "/favicon.png"):
                     name = {"/": "index.html", "/app.js": "app.js", "/styles.css": "styles.css", "/favicon.svg": "favicon.svg", "/favicon.ico": "favicon.ico", "/favicon.png": "favicon.png"}[parsed.path]
                     mime = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript", "styles.css": "text/css", "favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon", "favicon.png": "image/png"}[name]

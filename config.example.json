@@ -5,6 +5,7 @@
   "port": 7132,
   "sample_seconds": 10,
   "retention_days": 30,
+  "stale_channel_hours": 6,
   "database": "data/history.sqlite3",
   "exclude_sensors": [],
   "include_nonstandard_sensors": []

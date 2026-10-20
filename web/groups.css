@@ -1,0 +1,10 @@
+.group-actions{display:flex;gap:6px;flex-wrap:wrap}.aside-heading{flex-wrap:wrap;gap:10px}
+button:disabled{opacity:.45;cursor:default}
+dialog{color:#e8eef5;background:#111923;border:1px solid #34465b;border-radius:12px;width:min(560px,calc(100% - 32px));max-height:90vh;padding:24px}
+dialog::backdrop{background:#000a}dialog form{display:flex;flex-direction:column;gap:16px}
+dialog h2,dialog p{margin:0}dialog label{display:flex;gap:10px}
+#groupName{width:100%;min-width:0;font:inherit;background:#0b1016;color:#e8eef5;border:1px solid #34465b;border-radius:6px;padding:10px}
+#groupChannels{max-height:42vh;overflow:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;border-top:1px solid #263344;padding-top:12px}
+.group-channel{padding:8px 0;overflow-wrap:anywhere}#groupError{color:#ff7c91;font-size:13px;min-height:18px}
+.dialog-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}#deleteGroup{margin-right:auto;color:#ff7c91}
+@media(max-width:480px){#groupChannels{grid-template-columns:1fr}}

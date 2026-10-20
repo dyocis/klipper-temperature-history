@@ -24,6 +24,9 @@ run independently on the printer's Linux host or another always-on Linux machine
 - Retain 30 days of history by default, with configurable sampling and retention.
 - Provide live readings and 1-hour, 24-hour, 7-day, and 30-day chart views.
 - Select sensors and group heaters, motors, and electronics for readable charts.
+- Create named custom groups with any combination of channels, shared across browsers.
+- Remove channels and their recorded data after six hours without a valid temperature
+  (configurable), including channels that were renamed or removed from the printer.
 - A Nevermore group appears when recorded sensors include Nevermore/StealthMax
   names, `SM_*` channels (including `_SM_*`), or `BME_IN` and `BME_OUT`.
   These remain available under All sensors and are excluded from
@@ -60,6 +63,7 @@ file. Restart the service after editing settings.
 | `port` | `7132` | Dashboard port |
 | `sample_seconds` | `10` | Sample interval, minimum 1 second |
 | `retention_days` | `30` | Retention, maximum 365 days |
+| `stale_channel_hours` | `6` | Delete channels with no valid temperature for this many hours; `0` disables cleanup |
 | `database` | `data/history.sqlite3` | Persistent SQLite file |
 | `api_key_env` | `MOONRAKER_API_KEY` | Environment variable containing API key |
 | `exclude_sensors` | `[]` | Full Moonraker object names to exclude |
@@ -111,6 +115,41 @@ On Windows use `python` instead of `python3`. The recording host must stay on.
 
 ## Operation and updates
 
+### Custom groups
+
+Click **Create group**, enter a name, and check the channels you want together.
+The editor starts with the channels currently checked on the graph. Use **None**
+in the sensor sidebar or **Clear selection** in the editor to start from scratch.
+Save the group, then select it under **My groups** in the Group menu to display
+its history graph. Existing heater targets, print markers, and CSV export work
+with custom groups too.
+
+Select a custom group and click **Edit group** to change its name or channels,
+or delete the group. Deleting a group leaves its channels and history intact.
+Groups are stored in the recorder's SQLite database, survive restarts, and are
+available from every browser using that recorder. Deleting or recreating a
+channel does not automatically add it to your groups.
+
+### Inactive channel cleanup
+
+By default, channels are deleted after more than six hours without a finite
+temperature reading. A zero-degree reading is valid and keeps the channel.
+Channels that never report a temperature get the same grace period from their
+first appearance. Repeated missing samples do not reset the timer.
+
+Cleanup runs at most once every five minutes after a successful printer poll;
+it is suspended while Moonraker or Klipper is unavailable. On reconnection,
+fresh readings are recorded before stale channels are checked. A removed channel's
+stored readings are deleted and it is removed from any custom groups. Group names
+are kept even if their last channel is removed. If the channel starts reporting a
+valid temperature later, it is rediscovered with fresh history.
+
+Set `"stale_channel_hours": 0` in `config.local.json` to retain inactive channels,
+or use another number of hours. Existing installations default to six hours even
+if that setting is absent. Upgrading backfills channel timestamps from existing
+history; already-stale channels can be removed on the first successful poll.
+Back up the database before updating if you need to keep their old history.
+
 ### Optional Mainsail sidebar link
 
 After installing, add a link using the address your browser uses for the dashboard:
@@ -152,6 +191,8 @@ The dashboard has no login and is intended for a trusted local network. Do not
 expose it directly to the internet; bind to `127.0.0.1` when using an authenticated
 reverse proxy. Moonraker must permit the recorder's requests. This history viewer
 is not an alarm system or a replacement for Klipper's thermal protections.
+Anyone with access to the dashboard can manage its saved groups. These writes
+affect only this recorder's database; the printer connection remains read-only.
 
 History starts when the recorder starts; earlier Moonraker or Nevermore history
 is not imported. Long-range charts aggregate to about 1,200 buckets per sensor.
